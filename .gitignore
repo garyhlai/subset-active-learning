@@ -133,3 +133,4 @@ dmypy.json
 /wandb
 active_learning_wilds.py
 /subset_selection/simulated_annealing_sst.ipynb
+/debug
