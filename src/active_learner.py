@@ -85,7 +85,7 @@ class ActiveLearner:
         return torch.topk(entropys, k=n_samples).indices.tolist()
 
     def sample_data(self, n_new_samples):
-        print(f"config strategy is {config.strategy}")
+        print(f"config strategy is {self.config.strategy}")
         if self.config.strategy == "random_sampling":
             selected_indices = np.random.choice(len(self.sst2["train"]), replace=False, size=n_new_samples)
         elif self.config.strategy == "uncertainty_sampling":
