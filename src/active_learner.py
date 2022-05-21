@@ -84,37 +84,52 @@ class ActiveLearner:
         # select data based on highest entropy
         return torch.topk(entropys, k=n_samples).indices.tolist()
 
-    def sample_data(self, n_new_samples):
-        print(f"config strategy is {self.config.strategy}")
+    def random_sampling(self, sampling_size):
+        if not hasattr(self, "all_random_samples"):
+            max_num_samples = self.config.sampling_sizes[-1]
+            self.all_random_samples = np.random.choice(len(self.sst2["train"]), replace=False, size=max_num_samples)
+        return self.all_random_samples[:sampling_size]
+
+    def sample_data(self, n_new_samples, sampling_size):
         if self.config.strategy == "random_sampling":
-            selected_indices = np.random.choice(len(self.sst2["train"]), replace=False, size=n_new_samples)
+            selected_indices = self.random_sampling(sampling_size)
+            return selected_indices
         elif self.config.strategy == "uncertainty_sampling":
-            selected_indices = self.uncertainty_sampling(n_new_samples)
+            newly_selected_indices = self.uncertainty_sampling(n_new_samples)
+            self.train_data_indices.extend(newly_selected_indices)
+            return self.train_data_indices
         else:
             raise ValueError(f"Unknown strategy {self.config.strategy}")
-        return selected_indices
 
-    def step(self, n_new_samples):
+    def step(self, n_new_samples, sampling_size):
         """Take an active learning step"""
         ########### set up data #########
         # sample new data
-        sampled_data = self.sample_data(n_new_samples)
+        sampled_data = self.sample_data(n_new_samples, sampling_size)
         # concatenate the sampled data with the original data
-        self.train_data_indices.extend(sampled_data)
-        train_data = self.sst2["train"].select(self.train_data_indices)
-        debug_data = self.sst2["train"].select(self.train_data_indices[:8])
+        train_data = self.sst2["train"].select(sampled_data)
+        debug_data = self.sst2["train"].select(sampled_data[:8])
 
         self.train_ds = self.preprocess(train_data)
         self.debug_ds = self.preprocess(debug_data)
 
+        print(
+            f"Current train size: {self.train_ds} |  Sampling {n_new_samples} new samples | Config strategy is {self.config.strategy}"
+        )
+
+        if len(self.train_ds) != sampling_size:
+            raise ValueError(
+                f"wrong number of samples was selected. train_ds has length {len(self.train_ds)}, but sampling_size is {sampling_size}"
+            )
+
         ########### set up training #########
-        dir = f"./{self.config.strategy}/size_{len(self.train_data_indices)}" if not self.config.debug else "./debug"
+        dir = f"./{self.config.strategy}/size_{sampling_size}" if not self.config.debug else "./debug"
         training_args = TrainingArguments(
             output_dir=dir,
-            max_steps=self.config.max_steps if not self.config.debug else 640,
+            max_steps=self.config.max_steps,
             evaluation_strategy="steps",
-            report_to="wandb",
-            run_name=f"{self.config.strategy}-size-{len(self.train_data_indices)}",
+            report_to="wandb" if not self.config.debug else None,
+            run_name=f"{self.config.strategy}-size-{sampling_size}",
             eval_steps=300,
             learning_rate=1e-5,
             adam_epsilon=1e-6,
@@ -140,17 +155,24 @@ class ActiveLearner:
             self.sampling_model = model  # we use model from the previous active learning step as the uncertainty sampling model for the new step.
 
         ######## test ########
-        outputs = trainer.predict(self.test_ds)
-        with open(f"{dir}/test_set_evaluation_{len(self.train_data_indices)}.pkl", "wb") as f:
-            pickle.dump(outputs, f)
+        if not self.config.debug:
+            outputs = trainer.predict(self.test_ds)
+            with open(f"{dir}/test_set_evaluation_{sampling_size}.pkl", "wb") as f:
+                pickle.dump(outputs, f)
+
+        ######## save train_ds ########
+        with open(
+            f"{dir}/train_ds_{self.config.strategy}_{sampling_size}.pkl",
+            "wb",
+        ) as f:
+            pickle.dump(self.train_ds, f)
 
     def train(self):
         for i, sampling_size in enumerate(self.config.sampling_sizes):
             n_new_samples = (
                 sampling_size if i == 0 else self.config.sampling_sizes[i] - self.config.sampling_sizes[i - 1]
             )
-            print(f"Sampling {n_new_samples} new samples")
-            self.step(n_new_samples)
+            self.step(n_new_samples, sampling_size)
 
 
 @dataclass(frozen=True)
