@@ -89,7 +89,7 @@ class ActiveLearner:
         if self.config.strategy == "random_sampling":
             selected_indices = np.random.choice(len(self.sst2["train"]), replace=False, size=n_new_samples)
         elif self.config.strategy == "uncertainty_sampling":
-            selected_indices = self.uncertainty_sampling(self.n_new_samples)
+            selected_indices = self.uncertainty_sampling(n_new_samples)
         else:
             raise ValueError(f"Unknown strategy {self.config.strategy}")
         return selected_indices
