@@ -1,3 +1,4 @@
+from datasets import load_dataset
 from transformers import AutoTokenizer
 import json
 import sqlite3
@@ -14,12 +15,13 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-@dataclass(frozen=True)
+@dataclass
 class OptimalSubsetClassifierConfig:
     max_length: int = 66
     debug: bool = False
     model_name: str = "google/electra-small-discriminator"
     batch_size: int = 8
+    max_steps: int = 20000
 
 
 def get_df_from_db(db_path):
@@ -106,3 +108,23 @@ def create_stratefied_split(
     valid_indices = valid_pos_indices + valid_neg_indices
     test_indices = test_pos_indices + test_neg_indices
     return train_indices, valid_indices, test_indices
+
+
+def create_train_valid_test_debug_ds(optimal_subset_data_indices, config):
+    # get the 1000 point dataset
+    sst2 = load_dataset("sst")
+    data_pool = sst2["train"].shuffle(seed=0).select(range(1000))
+    ds = preprocess(data_pool, config, optimal_subset_data_indices)
+
+    # split the dataset into train, valid, test (keeping proportion of positive to negative examples the same)
+    data_pool_indices = set(range(1000))
+    non_optimal_subset_data_indices = list(data_pool_indices - optimal_subset_data_indices)
+    train_indices, valid_indices, test_indices = create_stratefied_split(
+        list(optimal_subset_data_indices), list(non_optimal_subset_data_indices), split_points=(0.8, 0.9)
+    )
+
+    train_ds = ds.select(train_indices)
+    valid_ds = ds.select(valid_indices)
+    test_ds = ds.select(test_indices)
+    debug_ds = ds.select(train_indices[:12])
+    return train_ds, valid_ds, test_ds, debug_ds
