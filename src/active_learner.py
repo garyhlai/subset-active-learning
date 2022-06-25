@@ -66,7 +66,7 @@ class ActiveLearner:
         raw_entropy = 0 - torch.sum(log_probs, axis=-1)
         return raw_entropy
 
-    def uncertainty_sampling(self, n_samples):
+    def get_preds(self):
         dl = DataLoader(self.original_train_ds, batch_size=self.config.batch_size, shuffle=False)
         # calculate entropys for each sample
         self.sampling_model.eval()
@@ -79,10 +79,17 @@ class ActiveLearner:
                 preds.append(out.logits)
             preds = torch.cat(preds)
             preds = torch.nn.functional.softmax(preds, dim=-1)
-            entropys = self.calculate_entropy(preds)
+        return preds
 
-        # select data based on highest entropy
+    def uncertainty_sampling(self, n_samples):
+        preds = self.get_preds()
+        entropys = self.calculate_entropy(preds)
         return torch.topk(entropys, k=n_samples).indices.tolist()
+
+    def subset_sampling(self, n_samples):
+        preds = self.get_preds()
+        pos_scores = preds[:, 1]
+        return torch.topk(pos_scores, k=n_samples).indices.tolist()
 
     def random_sampling(self, sampling_size):
         if not hasattr(self, "all_random_samples"):
@@ -96,6 +103,10 @@ class ActiveLearner:
             return selected_indices
         elif self.config.strategy == "uncertainty_sampling":
             newly_selected_indices = self.uncertainty_sampling(n_new_samples)
+            self.train_data_indices.extend(newly_selected_indices)
+            return self.train_data_indices
+        elif self.config.strategy == "subset_sampling":
+            newly_selected_indices = self.subset_sampling(n_new_samples)
             self.train_data_indices.extend(newly_selected_indices)
             return self.train_data_indices
         else:
