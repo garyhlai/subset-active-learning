@@ -137,3 +137,5 @@ active_learning_wilds.py
 *.db
 *.png
 settings.json
+/results
+/subset_classifier_results

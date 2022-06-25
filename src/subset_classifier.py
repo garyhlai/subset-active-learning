@@ -123,8 +123,8 @@ def create_train_valid_test_debug_ds(optimal_subset_data_indices, config):
         list(optimal_subset_data_indices), list(non_optimal_subset_data_indices), split_points=(0.8, 0.9)
     )
 
-    train_ds = ds.select(train_indices)
-    valid_ds = ds.select(valid_indices)
-    test_ds = ds.select(test_indices)
-    debug_ds = ds.select(train_indices[:12])
+    train_ds = ds.select(train_indices).shuffle(seed=0)
+    valid_ds = ds.select(valid_indices).shuffle(seed=0)
+    test_ds = ds.select(test_indices).shuffle(seed=0)
+    debug_ds = train_ds.select(range(12))
     return train_ds, valid_ds, test_ds, debug_ds
