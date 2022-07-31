@@ -5,11 +5,11 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 import pickle
-from typing import Literal
+from typing import Literal, Optional
 from tqdm import tqdm
 import wandb
 
-from settings.subset_selection import SUBSET_SELECTION_POOL
+from src.settings.subset_selection import SUBSET_SELECTION_POOL
 
 
 class ActiveLearner:
@@ -33,7 +33,9 @@ class ActiveLearner:
         if self.config.strategy == "uncertainty_sampling":
             self.sampling_model = AutoModelForSequenceClassification.from_pretrained(config.model_name, num_labels=2)
         elif self.config.strategy == "subset_sampling":
-            self.sampling_model = AutoModelForSequenceClassification.from_pretrained(config.model_path, num_labels=2)
+            self.sampling_model = AutoModelForSequenceClassification.from_pretrained(
+                config.subset_model_path, num_labels=2
+            )
 
     def preprocess(self, data):
         data = data.rename_column("label", "scalar_label")
@@ -197,10 +199,11 @@ class ActiveLearner:
 
 @dataclass(frozen=True)
 class ActiveLearnerConfig:
+    subset_model_path: Optional[str]
     max_length: int = 66
     debug: bool = False
     model_name: str = "google/electra-small-discriminator"
-    strategy: Literal["random_sampling", "uncertainty_sampling"] = "random_sampling"
+    strategy: Literal["random_sampling", "uncertainty_sampling", "subset_sampling"] = "random_sampling"
     sampling_sizes: tuple = (1000, 2000, 3000, 4000)
     max_steps: int = 20000
     batch_size: int = 8
