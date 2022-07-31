@@ -9,6 +9,8 @@ from typing import Literal
 from tqdm import tqdm
 import wandb
 
+from settings.subset_selection import SUBSET_SELECTION_POOL
+
 
 class ActiveLearner:
     def __init__(self, config):
@@ -20,15 +22,18 @@ class ActiveLearner:
         self.metric = load_metric("accuracy")
 
         self.sst2 = load_dataset("sst")
-        self.original_train_ds = self.preprocess(
-            self.sst2["train"]
+        self.original_train_ds = self.preprocess(self.sst2["train"]).shuffle(
+            seed=0
         )  # need to preprocess/tokenize all of train_ds for uncertainty sampling
         self.valid_ds = self.preprocess(self.sst2["validation"])
         self.test_ds = self.preprocess(self.sst2["test"])
         self.train_data_indices = []
 
         # initialize model used for uncertainty sampling
-        self.sampling_model = AutoModelForSequenceClassification.from_pretrained(config.model_name, num_labels=2)
+        if self.config.strategy == "uncertainty_sampling":
+            self.sampling_model = AutoModelForSequenceClassification.from_pretrained(config.model_name, num_labels=2)
+        elif self.config.strategy == "subset_sampling":
+            self.sampling_model = AutoModelForSequenceClassification.from_pretrained(config.model_path, num_labels=2)
 
     def preprocess(self, data):
         data = data.rename_column("label", "scalar_label")
@@ -67,8 +72,10 @@ class ActiveLearner:
         return raw_entropy
 
     def get_preds(self):
-        dl = DataLoader(self.original_train_ds, batch_size=self.config.batch_size, shuffle=False)
-        # calculate entropys for each sample
+        remaining_pool_indices = set(range(len(self.original_train_ds))) - set(self.train_data_indices)
+        dl = DataLoader(
+            self.original_train_ds.select(remaining_pool_indices), batch_size=self.config.batch_size, shuffle=False
+        )
         self.sampling_model.eval()
         self.sampling_model.to(self.device)
         with torch.no_grad():
@@ -86,7 +93,9 @@ class ActiveLearner:
         entropys = self.calculate_entropy(preds)
         return torch.topk(entropys, k=n_samples).indices.tolist()
 
-    def subset_sampling(self, n_samples):
+    def subset_sampling(self, n_samples, nth_step):
+        if nth_step == 0:
+            return SUBSET_SELECTION_POOL  # first step is trained on the subset selection data pool
         preds = self.get_preds()
         pos_scores = preds[:, 1]
         return torch.topk(pos_scores, k=n_samples).indices.tolist()
@@ -97,7 +106,7 @@ class ActiveLearner:
             self.all_random_samples = np.random.choice(len(self.sst2["train"]), replace=False, size=max_num_samples)
         return self.all_random_samples[:sampling_size]
 
-    def sample_data(self, n_new_samples, sampling_size):
+    def sample_data(self, n_new_samples, sampling_size, nth_step):
         if self.config.strategy == "random_sampling":
             selected_indices = self.random_sampling(sampling_size)
             return selected_indices
@@ -106,17 +115,17 @@ class ActiveLearner:
             self.train_data_indices.extend(newly_selected_indices)
             return self.train_data_indices
         elif self.config.strategy == "subset_sampling":
-            newly_selected_indices = self.subset_sampling(n_new_samples)
+            newly_selected_indices = self.subset_sampling(n_new_samples, nth_step)
             self.train_data_indices.extend(newly_selected_indices)
             return self.train_data_indices
         else:
             raise ValueError(f"Unknown strategy {self.config.strategy}")
 
-    def step(self, n_new_samples, sampling_size):
+    def step(self, n_new_samples, sampling_size, nth_step):
         """Take an active learning step"""
         ########### set up data #########
         # sample new data
-        sampled_data = self.sample_data(n_new_samples, sampling_size)
+        sampled_data = self.sample_data(n_new_samples, sampling_size, nth_step)
         # concatenate the sampled data with the original data
         train_data = self.sst2["train"].select(sampled_data)
         debug_data = self.sst2["train"].select(sampled_data[:8])
@@ -183,7 +192,7 @@ class ActiveLearner:
             n_new_samples = (
                 sampling_size if i == 0 else self.config.sampling_sizes[i] - self.config.sampling_sizes[i - 1]
             )
-            self.step(n_new_samples, sampling_size)
+            self.step(n_new_samples=n_new_samples, sampling_size=sampling_size, nth_step=i)
 
 
 @dataclass(frozen=True)
