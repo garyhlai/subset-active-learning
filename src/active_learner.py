@@ -13,9 +13,10 @@ from src.settings.subset_selection import SUBSET_SELECTION_POOL
 
 
 class ActiveLearner:
-    def __init__(self, config):
+    def __init__(self, config, training_args):
         self.config = config
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.training_args = training_args
 
         set_seed(42)
         self.tokenizer = AutoTokenizer.from_pretrained(config.model_name)
@@ -146,23 +147,11 @@ class ActiveLearner:
 
         ########### set up training #########
         dir = f"./{self.config.strategy}/size_{sampling_size}" if not self.config.debug else "./debug"
-        training_args = TrainingArguments(
-            output_dir=dir,
-            max_steps=self.config.max_steps,
-            evaluation_strategy="steps",
-            report_to="wandb" if not self.config.debug else None,
-            run_name=f"{self.config.strategy}-size-{sampling_size}",
-            eval_steps=300,
-            learning_rate=1e-5,
-            adam_epsilon=1e-6,
-            warmup_ratio=0.1,
-            weight_decay=0.01,
-        )
-        print(f"training_args: {training_args}")
+        print(f"training_args: {self.training_args}")
         model = AutoModelForSequenceClassification.from_pretrained(self.config.model_name, num_labels=2)
         trainer = Trainer(
             model=model,
-            args=training_args,
+            args=self.training_args,
             train_dataset=self.train_ds if not self.config.debug else self.debug_ds,
             eval_dataset=self.valid_ds if not self.config.debug else self.debug_ds,
             compute_metrics=self.compute_metrics,
