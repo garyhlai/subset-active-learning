@@ -1,4 +1,4 @@
-from src.active_learner import ActiveLearner, ActiveLearnerConfig
+from subset_active_learning.active_learner import ActiveLearner, ActiveLearnerConfig
 import pickle
 from pathlib import Path
 

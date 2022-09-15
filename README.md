@@ -2,6 +2,16 @@
 
 Result & analysis link: https://www.notion.so/Active-Learning-Subset-Selection-Research-656df62c6bde45c2b3ed6091f2f8f85d
 
+## Setup & Reproducibility
+
+- Installation: `poetry install -vv`
+- Adding a dependency: `poetry add <dep> -vv` (make sure to commit the .lock file)
+
+## Contribution
+
+- Never push to the main branch directly (let alone force push). Always check out a branch `git checkout -b <branch_name>`
+  and submit PR for review.
+
 ## Evaluation Notebook: `test.ipynb`
 
 - Use the notebook `test.ipynb` to do model evaluation and reproduce the figures/plots in the Notion page.

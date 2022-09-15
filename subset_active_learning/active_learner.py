@@ -9,7 +9,7 @@ from typing import Literal, Optional
 from tqdm import tqdm
 import wandb
 
-from src.settings.subset_selection import SUBSET_SELECTION_POOL
+from subset_active_learning.settings.subset_selection import SUBSET_SELECTION_POOL
 
 
 class ActiveLearner:

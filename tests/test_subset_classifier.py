@@ -1,4 +1,4 @@
-from src.subset_classifier import (
+from subset_active_learning.subset_classifier import (
     create_stratefied_split,
     get_df_from_db,
     get_optimal_subset_data_indices,
