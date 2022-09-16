@@ -19,7 +19,7 @@ class SubsetSelector(BaseModel, extra=Extra.allow):
     def _get_nth_best_subset(self, n: int) -> np.ndarray:
         """Select a single example -- the nth best by test accuracy to swap out"""
         try:
-            con = sqlite3.connect("%s.db" % self.db_name)
+            con = sqlite3.connect(f"{self.db_name}.db")
             cur = con.cursor()
             cur.execute("SELECT * FROM states ORDER BY objective DESC LIMIT 1 OFFSET %d" % n)
             r = cur.fetchone()
@@ -40,7 +40,7 @@ class SubsetSelector(BaseModel, extra=Extra.allow):
 
     def _insert_run(self, subset_indices: np.ndarray, quality: float) -> None:
         try:
-            con = sqlite3.connect("%s.db" % self.db_name)
+            con = sqlite3.connect(f"{self.db_name}.db")
             cur = con.cursor()
             cur.execute("INSERT INTO states VALUES ('%s', %.8f)" % (json.dumps(subset_indices.tolist()), quality))
             con.commit()
