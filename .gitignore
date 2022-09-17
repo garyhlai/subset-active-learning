@@ -139,3 +139,4 @@ active_learning_wilds.py
 settings.json
 /results
 /subset_classifier_results
+scripts/subset_selection/wandb/*
