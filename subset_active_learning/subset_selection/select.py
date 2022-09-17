@@ -1,7 +1,6 @@
 import sqlite3
-from typing import Any, Optional
-from pydantic import BaseModel, Extra, Field
-from transformers import TrainingArguments, AutoModel, AutoTokenizer, AutoModelForSequenceClassification, get_scheduler
+from pydantic import BaseModel
+from transformers import AutoModelForSequenceClassification, get_scheduler
 from .utils import seed_everything
 import numpy as np
 import json
@@ -9,19 +8,7 @@ import datasets
 import wandb
 import torch
 from tqdm import tqdm
-
-
-def preprocess_sst2(model_card: str) -> datasets.DatasetDict: 
-    sst2 = datasets.load_dataset('sst')
-    max_length = 66
-    tokenizer = AutoTokenizer.from_pretrained(model_card)
-    def tokenize_function(examples, field='sentence'):
-        return tokenizer(examples[field], padding='max_length', max_length=max_length, truncation=True)
-    tokenized_sst2 = sst2.map(tokenize_function, batched=False)
-    tokenized_sst2 = tokenized_sst2.rename_column('label', 'scalar_label')
-    tokenized_sst2 = tokenized_sst2.map(lambda x: {'labels' : 0 if x['scalar_label'] < 0.5 else 1})
-    tokenized_sst2.set_format(type='torch', columns=['input_ids', 'token_type_ids', 'attention_mask', 'labels'])
-    return tokenized_sst2
+import os
 
 
 class SubsetTrainingArguments(BaseModel):
@@ -126,7 +113,7 @@ class SubsetTrainer():
 
 
 class SubsetSearcherArguments(BaseModel): 
-    db_name: str = "sst_results"
+    db_path: str = "sst_results"
     seed: int = 0
     annealing_runs: int = 5000
     total_sample_size: int = 1000
@@ -137,25 +124,42 @@ class SubsetSearcherArguments(BaseModel):
 class SubsetSearcher:
     def __init__(
         self,
+        data_pool: datasets.Dataset,
         subset_trainer: SubsetTrainer,
-        params: SubsetSearcherArguments,
-        data_pool: datasets.Dataset
+        params: SubsetSearcherArguments
     ):
-        self.seed, self.db_name, self.total_sample_size, self.annealing_runs, self.optimal_subset_size = (
+        self.seed, self.db_path, self.total_sample_size, self.annealing_runs, self.optimal_subset_size = (
             params.seed,
-            params.db_name,
+            params.db_path,
             params.total_sample_size,
             params.annealing_runs,
             params.optimal_subset_size
         )
         self.data_pool = data_pool
         self.subset_trainer = subset_trainer
-     
+        if not os.path.exists(self.db_path): 
+            self.initialize_db(self.db_path)
+    
+    def initialize_db(self, db_path: str):
+        with sqlite3.connect(db_path) as con:
+            cur = con.cursor()
+            cur.execute('''CREATE TABLE states
+                        (indexes text, objective real)''')
+            cur.execute('''CREATE INDEX idx_objective 
+                            ON states (objective);''')
+            
+            # start from a random sample
+            random_subset_indices = np.random.choice(self.total_sample_size, size=self.optimal_subset_size, replace=False)
+            if (num_unique_samples := len(set(random_subset_indices))) != self.optimal_subset_size:
+                raise ValueError(f"Unexpected number of indices are selected. Expected {self.optimal_subset_size}, got {num_unique_samples}")
+            cur.execute("INSERT INTO states VALUES ('%s', 0)" % json.dumps(random_subset_indices.tolist()))
+            con.commit()
+            
 
     def _get_nth_best_subset(self, n: int) -> np.ndarray:
         """Select the nth best by test accuracy"""
         try:
-            con = sqlite3.connect("%s.db" % self.db_name)
+            con = sqlite3.connect(self.db_path)
             cur = con.cursor()
             cur.execute("SELECT * FROM states ORDER BY objective DESC LIMIT 1 OFFSET %d" % n)
             r = cur.fetchone()
@@ -178,7 +182,7 @@ class SubsetSearcher:
 
     def _insert_run(self, subset_indices: np.ndarray, quality: float) -> None:
         try:
-            con = sqlite3.connect("%s.db" % self.db_name)
+            con = sqlite3.connect(self.db_path)
             cur = con.cursor()
             cur.execute("INSERT INTO states VALUES ('%s', %.8f)" % (json.dumps(subset_indices.tolist()), quality))
             con.commit()
@@ -186,19 +190,17 @@ class SubsetSearcher:
             con.close()
 
     def select_new_subset(self, current_num_runs: int) -> np.ndarray:
-        exploration_ratio = (
-            (self.annealing_runs - current_num_runs) / self.annealing_runs
-            if current_num_runs < self.annealing_runs
-            else 0
-        )
-        nth_best = np.random.randint(0, int(exploration_ratio * current_num_runs))
-        base_subset = self._get_nth_best_subset(nth_best)  # get the nth best subset (size 100)
+        # 0 <= exploration ratio <= 1; the closer to 0, the greedier
+        exploration_ratio = max(0, (self.annealing_runs - current_num_runs) / self.annealing_runs)
+        # 0 <= nth best <= int(exploration_ratio * current_num_runs); the closer to 0, the greedier
+        nth_best = np.random.randint(0, max(1, int(exploration_ratio * current_num_runs)))
+        base_subset = self._get_nth_best_subset(nth_best) 
         self._create_new_subset_in_place(base_subset)
         return base_subset # the altered base_subset
     
     def _get_num_runs(self):
         try:
-            con = sqlite3.connect("%s.db" % self.db_name)
+            con = sqlite3.connect(self.db_path)
             cur = con.cursor()
             cur.execute("SELECT COUNT(objective) FROM states")
             r = cur.fetchone()[0]
@@ -211,17 +213,16 @@ class SubsetSearcher:
         seed_everything(self.seed)
         current_num_run = self._get_num_runs()
         new_subset_indices = self.select_new_subset(current_num_run)
-        wandb.init(project="simulated_annealing-sst", entity="johntzwei", tags=[self.model_card])
+        wandb.init(project="subset-search", entity="johnny-gary", tags=[self.subset_trainer.params.model_card])
+        wandb.log({"model_card": self.subset_trainer.params.model_card})
         wandb.log({"n_downsample": self.total_sample_size})
-        wandb.log({"n_search": self.n_search})
-        wandb.log({"model_card": self.model_card})
+        wandb.log({"n_search": self.optimal_subset_size})
         wandb.log({"indexes": json.dumps(new_subset_indices.tolist())})
         new_subset=self.data_pool.select(new_subset_indices)
         new_quality = self.subset_trainer.train_one_step(new_subset)
         self._insert_run(subset_indices=new_subset, quality=new_quality)
 
     def search(self):
-        self.current_num_run = 0
         while True:
             self.one_run(self)
 
