@@ -10,6 +10,20 @@ import wandb
 import torch
 from tqdm import tqdm
 
+
+def preprocess_sst2(model_card: str) -> datasets.DatasetDict: 
+    sst2 = datasets.load_dataset('sst')
+    max_length = 66
+    tokenizer = AutoTokenizer.from_pretrained(model_card)
+    def tokenize_function(examples, field='sentence'):
+        return tokenizer(examples[field], padding='max_length', max_length=max_length, truncation=True)
+    tokenized_sst2 = sst2.map(tokenize_function, batched=False)
+    tokenized_sst2 = tokenized_sst2.rename_column('label', 'scalar_label')
+    tokenized_sst2 = tokenized_sst2.map(lambda x: {'labels' : 0 if x['scalar_label'] < 0.5 else 1})
+    tokenized_sst2.set_format(type='torch', columns=['input_ids', 'token_type_ids', 'attention_mask', 'labels'])
+    return tokenized_sst2
+
+
 class SubsetTrainingArguments(BaseModel):
     model_card: str = "google/electra-small-discriminator"
     pretraining: bool = True
@@ -26,7 +40,7 @@ class SubsetTrainingArguments(BaseModel):
     weight_decay: float = 0.01
     num_labels: int = 2
     metric: str = "accuracy"
-
+    
     
 class SubsetTrainer(): 
     def __init__(self, params: SubsetTrainingArguments, valid_ds, test_ds) -> None: 
@@ -37,7 +51,6 @@ class SubsetTrainer():
         self.test_dataloader = torch.utils.data.DataLoader(test_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True)
 
     def train_one_step(self, subset: datasets.Dataset) -> float:
-        tokenizer = AutoTokenizer.from_pretrained(self.params.model_card)
         model = AutoModelForSequenceClassification.from_pretrained(self.params.model_card, num_labels=self.params.num_labels)
         model.to(self.device)
         self._train(model, subset)
@@ -112,31 +125,32 @@ class SubsetTrainer():
         return eval_dict
 
 
+class SubsetSearcherArguments(BaseModel): 
+    db_name: str = "sst_results"
+    seed: int = 0
+    annealing_runs: int = 5000
+    total_sample_size: int = 1000
+    optimal_subset_size: int = 100
+    anneal_factor: float = 0.1
+
+
 class SubsetSearcher:
     def __init__(
         self,
         subset_trainer: SubsetTrainer,
-        tokenized_ds: datasets.Dataset,
-        training_args: Optional[TrainingArguments] = None,
-        db_name: str = "sst_results",
-        seed: int = 0,
-        annealing_runs: int = 5000,
-        total_sample_size: int = 1000,
-        optimal_subset_size: int = 100,
-        anneal_factor: float = 0.1,
+        params: SubsetSearcherArguments,
+        data_pool: datasets.Dataset
     ):
         self.seed, self.db_name, self.total_sample_size, self.annealing_runs, self.optimal_subset_size = (
-            seed,
-            db_name,
-            total_sample_size,
-            annealing_runs,
-            optimal_subset_size
+            params.seed,
+            params.db_name,
+            params.total_sample_size,
+            params.annealing_runs,
+            params.optimal_subset_size
         )
-        # self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.data_pool = tokenized_ds["train"].shuffle(seed=self.seed).select(range(self.total_sample_size))
-        self.subset_trainer = SubsetTrainer()
-        # val_dataloader = torch.utils.data.DataLoader(tokenized_sst2['validation'], shuffle=False, batch_size=batch_size, pin_memory=True)
-        # test_dataloader = torch.utils.data.DataLoader(tokenized_sst2['test'], shuffle=False, batch_size=batch_size, pin_memory=True)
+        self.data_pool = data_pool
+        self.subset_trainer = subset_trainer
+     
 
     def _get_nth_best_subset(self, n: int) -> np.ndarray:
         """Select the nth best by test accuracy"""
