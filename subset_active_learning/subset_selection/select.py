@@ -97,7 +97,7 @@ class SubsetTrainer():
                     break
 
     def _evaluate(self, model, val_dataloader):
-        self.model.eval()
+        model.eval()
         val_pbar = tqdm(total=len(val_dataloader))
         for batch in val_dataloader:
             batch = {k: v.to(self.device) for k, v in batch.items()}
@@ -116,7 +116,7 @@ class SubsetSearcherArguments(BaseModel):
     db_path: str = "sst_results"
     seed: int = 0
     annealing_runs: int = 5000
-    total_sample_size: int = 1000
+    data_pool_size: int = 1000
     optimal_subset_size: int = 100
     anneal_factor: float = 0.1
 
@@ -128,10 +128,10 @@ class SubsetSearcher:
         subset_trainer: SubsetTrainer,
         params: SubsetSearcherArguments
     ):
-        self.seed, self.db_path, self.total_sample_size, self.annealing_runs, self.optimal_subset_size = (
+        self.seed, self.db_path, self.data_pool_size, self.annealing_runs, self.optimal_subset_size = (
             params.seed,
             params.db_path,
-            params.total_sample_size,
+            params.data_pool_size,
             params.annealing_runs,
             params.optimal_subset_size
         )
@@ -149,7 +149,7 @@ class SubsetSearcher:
                             ON states (objective);''')
             
             # start from a random sample
-            random_subset_indices = np.random.choice(self.total_sample_size, size=self.optimal_subset_size, replace=False)
+            random_subset_indices = np.random.choice(self.data_pool_size, size=self.optimal_subset_size, replace=False)
             if (num_unique_samples := len(set(random_subset_indices))) != self.optimal_subset_size:
                 raise ValueError(f"Unexpected number of indices are selected. Expected {self.optimal_subset_size}, got {num_unique_samples}")
             cur.execute("INSERT INTO states VALUES ('%s', 0)" % json.dumps(random_subset_indices.tolist()))
@@ -171,7 +171,7 @@ class SubsetSearcher:
         """Create a new subset by swapping out one sample from the base_subset
         and swapping in a new sample. This is done inplace for efficiency but it produces side effect of modifying the `base_subset`
         """
-        all_indices = np.arange(self.total_sample_size)
+        all_indices = np.arange(self.data_pool_size)
         available_examples = np.setdiff1d(all_indices, base_subset)
         in_sample = np.random.choice(available_examples)
         out_sample_idx = np.random.randint(0, len(base_subset) - 1)
@@ -215,15 +215,19 @@ class SubsetSearcher:
         new_subset_indices = self.select_new_subset(current_num_run)
         wandb.init(project="subset-search", entity="johnny-gary", tags=[self.subset_trainer.params.model_card])
         wandb.log({"model_card": self.subset_trainer.params.model_card})
-        wandb.log({"n_downsample": self.total_sample_size})
-        wandb.log({"n_search": self.optimal_subset_size})
-        wandb.log({"indexes": json.dumps(new_subset_indices.tolist())})
+        wandb.log({"data_pool_size": self.data_pool_size})
+        wandb.log({"optimal_subset_size": self.optimal_subset_size})
+        wandb.log({"indices": json.dumps(new_subset_indices.tolist())})
         new_subset=self.data_pool.select(new_subset_indices)
         new_quality = self.subset_trainer.train_one_step(new_subset)
-        self._insert_run(subset_indices=new_subset, quality=new_quality)
+        self._insert_run(subset_indices=new_subset_indices, quality=new_quality)
 
-    def search(self):
+    def search(self, n_runs):
+        for _ in range(n_runs): 
+            self.one_run()
+
+    def search_til_manual_termination(self):
         while True:
-            self.one_run(self)
+            self.one_run()
 
 
