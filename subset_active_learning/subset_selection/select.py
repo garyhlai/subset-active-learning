@@ -213,7 +213,7 @@ class SubsetSearcher:
         seed_everything(self.seed)
         current_num_run = self._get_num_runs()
         new_subset_indices = self.select_new_subset(current_num_run)
-        wandb.init(project="subset-search", entity="johnny-gary", tags=[self.subset_trainer.params.model_card])
+        wandb_run = wandb.init(project="subset-search", entity="johnny-gary", tags=[self.subset_trainer.params.model_card])
         wandb.log({"model_card": self.subset_trainer.params.model_card})
         wandb.log({"data_pool_size": self.data_pool_size})
         wandb.log({"optimal_subset_size": self.optimal_subset_size})
@@ -221,9 +221,11 @@ class SubsetSearcher:
         new_subset=self.data_pool.select(new_subset_indices)
         new_quality = self.subset_trainer.train_one_step(new_subset)
         self._insert_run(subset_indices=new_subset_indices, quality=new_quality)
+        wandb_run.finish()
 
     def search(self, n_runs):
-        for _ in range(n_runs): 
+        for n in range(n_runs): 
+            print(f"### RUN {n}")
             self.one_run()
 
     def search_til_manual_termination(self):
