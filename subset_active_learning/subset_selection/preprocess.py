@@ -14,4 +14,8 @@ def preprocess_sst2(model_card: str) -> datasets.DatasetDict:
     tokenized_sst2 = tokenized_sst2.rename_column("label", "scalar_label")
     tokenized_sst2 = tokenized_sst2.map(lambda x: {"labels": 0 if x["scalar_label"] < 0.5 else 1})
     tokenized_sst2.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
+    # remove extraneous columns
+    for split in ("train", "validation", "test"):
+        extraneous_columns = [column for column in sst2.column_names[split] if column in set(tokenized_sst2.column_names[split])]
+        tokenized_sst2[split] = tokenized_sst2[split].remove_columns(extraneous_columns) 
     return tokenized_sst2
