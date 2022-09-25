@@ -30,12 +30,13 @@ class SubsetTrainingArguments(BaseModel):
     
     
 class SubsetTrainer(): 
-    def __init__(self, params: SubsetTrainingArguments, valid_ds, test_ds) -> None: 
+    def __init__(self, params: SubsetTrainingArguments, valid_ds, test_ds, num_workers=0) -> None: 
+        self.num_workers = num_workers
         self.params = params
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu' 
         self.metric = datasets.load_metric(self.params.metric)
-        self.val_dataloader = torch.utils.data.DataLoader(valid_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True)
-        self.test_dataloader = torch.utils.data.DataLoader(test_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True)
+        self.val_dataloader = torch.utils.data.DataLoader(valid_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True, num_workers=self.num_workers)
+        self.test_dataloader = torch.utils.data.DataLoader(test_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True, num_workers=self.num_workers)
 
     def train_one_step(self, subset: datasets.Dataset, calculate_test_accuracy: bool = False) -> float:
         model = AutoModelForSequenceClassification.from_pretrained(self.params.model_card, num_labels=self.params.num_labels)
@@ -59,7 +60,7 @@ class SubsetTrainer():
         best_acc = None
         patience = 0
         pbar = tqdm(total=self.params.max_steps)
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, shuffle=True, batch_size=self.params.batch_size, pin_memory=True)
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, shuffle=True, batch_size=self.params.batch_size, pin_memory=True, num_workers=self.num_workers)
         it = iter(train_dataloader)
 
         optimizer = torch.optim.AdamW(params=model.parameters(), lr=self.params.learning_rate, betas=(self.params.adam_beta1, self.params.adam_beta2), eps=self.params.adam_epsilon, weight_decay=self.params.weight_decay)

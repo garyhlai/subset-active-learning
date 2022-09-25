@@ -11,10 +11,10 @@ from tqdm import tqdm
 from subset_active_learning.subset_selection import select, preprocess
 
 
-
+N_RUNS = 20
 DB_PATH = "/home/glai/dev/subset-active-learning/local_bucket/new_sst.db"
 
-training_args = select.SubsetTrainingArguments(eval_steps=3, max_steps=5)
+training_args = select.SubsetTrainingArguments()
 searching_args = select.SubsetSearcherArguments(seed=0, db_path=DB_PATH)
 
 processed_ds = preprocess.preprocess_sst2(training_args.model_card)
@@ -26,7 +26,7 @@ subset_trainer = select.SubsetTrainer(
 data_pool = processed_ds["train"].shuffle(seed=searching_args.seed).select(range(searching_args.data_pool_size))
 subset_searcher = select.SubsetSearcher(subset_trainer=subset_trainer, params=searching_args, data_pool=data_pool)
 
-subset_searcher.search(n_runs=3)
+subset_searcher.search(n_runs=N_RUNS)
 
 
 
