@@ -37,13 +37,19 @@ class SubsetTrainer():
         self.val_dataloader = torch.utils.data.DataLoader(valid_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True)
         self.test_dataloader = torch.utils.data.DataLoader(test_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True)
 
-    def train_one_step(self, subset: datasets.Dataset) -> float:
+    def train_one_step(self, subset: datasets.Dataset, calculate_test_accuracy: bool = False) -> float:
         model = AutoModelForSequenceClassification.from_pretrained(self.params.model_card, num_labels=self.params.num_labels)
         model.to(self.device)
         self._train(model, subset)
-        eval_dict = self._evaluate(model, self.test_dataloader)
-        eval_dict = {"sst2_test:%s" % k: v for k, v in eval_dict.items()}
-        new_quality = eval_dict["sst2_test:accuracy"]
+
+        if calculate_test_accuracy: # evaluate test accuracy
+            test_eval_dict = self._evaluate(model, self.test_dataloader)
+            test_eval_dict = {"sst2_final_test:%s" % k: v for k, v in test_eval_dict.items()}
+            wandb.log(test_eval_dict) 
+
+        eval_dict = self._evaluate(model, self.val_dataloader)
+        eval_dict = {"sst2_final_valid:%s" % k: v for k, v in eval_dict.items()}
+        new_quality = eval_dict["sst2_final_valid:accuracy"]
         wandb.log(eval_dict)
         return new_quality
 
