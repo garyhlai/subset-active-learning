@@ -114,6 +114,8 @@ class SubsetTrainer():
 
 class SubsetSearcherArguments(BaseModel): 
     db_path: str = "sst_results"
+    wandb_project: str = "subset_search"
+    wandb_entity: str = "johnny-gary"
     seed: int = 0
     annealing_runs: int = 5000
     data_pool_size: int = 1000
@@ -128,12 +130,15 @@ class SubsetSearcher:
         subset_trainer: SubsetTrainer,
         params: SubsetSearcherArguments
     ):
-        self.seed, self.db_path, self.data_pool_size, self.annealing_runs, self.optimal_subset_size = (
+        self.params = params
+        self.seed, self.db_path, self.data_pool_size, self.annealing_runs, self.optimal_subset_size, self.wandb_project, self.wandb_entity = (
             params.seed,
             params.db_path,
             params.data_pool_size,
             params.annealing_runs,
-            params.optimal_subset_size
+            params.optimal_subset_size,
+            params.wandb_project,
+            params.wandb_entity
         )
         self.data_pool = data_pool
         self.subset_trainer = subset_trainer
@@ -213,10 +218,10 @@ class SubsetSearcher:
         seed_everything(self.seed)
         current_num_run = self._get_num_runs()
         new_subset_indices = self.select_new_subset(current_num_run)
-        wandb_run = wandb.init(project="subset-search", entity="johnny-gary", tags=[self.subset_trainer.params.model_card])
+        wandb_run = wandb.init(project=self.wandb_project, entity=self.wandb_entity, tags=[self.subset_trainer.params.model_card])
         wandb.log({"model_card": self.subset_trainer.params.model_card})
-        wandb.log({"data_pool_size": self.data_pool_size})
-        wandb.log({"optimal_subset_size": self.optimal_subset_size})
+        wandb.log({"pool_size": self.data_pool_size})
+        wandb.log({"search_size": self.optimal_subset_size})
         wandb.log({"indices": json.dumps(new_subset_indices.tolist())})
         new_subset=self.data_pool.select(new_subset_indices)
         new_quality = self.subset_trainer.train_one_step(new_subset)
