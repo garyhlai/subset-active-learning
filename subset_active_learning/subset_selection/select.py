@@ -54,7 +54,7 @@ class SubsetTrainer():
         wandb.log(eval_dict)
 
         if save_path is not None: 
-            torch.save(model.state_dict(), self.save_path)
+            torch.save(model.state_dict(), save_path)
         return new_quality
 
     def _train(self, model, train_dataset, tolerance=2):
