@@ -38,7 +38,7 @@ class SubsetTrainer():
         self.val_dataloader = torch.utils.data.DataLoader(valid_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True, num_workers=self.num_workers)
         self.test_dataloader = torch.utils.data.DataLoader(test_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True, num_workers=self.num_workers)
 
-    def train_one_step(self, subset: datasets.Dataset, calculate_test_accuracy: bool = False) -> float:
+    def train_one_step(self, subset: datasets.Dataset, calculate_test_accuracy: bool = False, save_path=None)-> float:
         model = AutoModelForSequenceClassification.from_pretrained(self.params.model_card, num_labels=self.params.num_labels)
         model.to(self.device)
         self._train(model, subset)
@@ -52,6 +52,9 @@ class SubsetTrainer():
         eval_dict = {"sst2_final_valid:%s" % k: v for k, v in eval_dict.items()}
         new_quality = eval_dict["sst2_final_valid:accuracy"]
         wandb.log(eval_dict)
+
+        if save_path is not None: 
+            torch.save(model.state_dict(), self.save_path)
         return new_quality
 
     def _train(self, model, train_dataset, tolerance=2):
