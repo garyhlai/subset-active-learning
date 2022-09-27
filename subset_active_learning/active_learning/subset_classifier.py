@@ -6,7 +6,7 @@ import pandas as pd
 from collections import Counter
 from pydantic.dataclasses import dataclass
 from typing import List
-
+import os
 import logging
 from tabulate import tabulate
 
@@ -25,6 +25,8 @@ class OptimalSubsetClassifierConfig:
 
 
 def get_df_from_db(db_path):
+    if not os.path.exists(db_path):
+        raise ValueError(f"No database exists at path {db_path}")
     with sqlite3.connect(db_path) as conn:
         # Now in order to read in pandas dataframe we need to know table name
         cursor = conn.cursor()
