@@ -39,16 +39,14 @@ def get_df_from_db(db_path):
 def get_optimal_subset_data_indices(df):
     optimal_subset_idx = df["objective"].idxmax()
 
-    optimal_subset_data_indices = set(json.loads(df.iloc[optimal_subset_idx].indexes))
-    return optimal_subset_data_indices
+    return set(json.loads(df.iloc[optimal_subset_idx].indexes))
 
 
 def get_subset_unique_counts(df):
     # count the unique number of data points in each subset
     indexes = list(map(json.loads, df["indexes"].to_list()))
     unique_index_counts = list(map(lambda x: len(set(x)), indexes))
-    subset_sizes = Counter(unique_index_counts)
-    return subset_sizes
+    return Counter(unique_index_counts)
 
 
 def preprocess(data, config, optimal_subset_data_indices):

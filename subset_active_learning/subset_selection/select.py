@@ -42,7 +42,7 @@ class SubsetTrainer():
         model.to(self.device)
         self._train(model, subset)
         eval_dict = self._evaluate(model, self.test_dataloader)
-        eval_dict = {"sst2_test:%s" % k: v for k, v in eval_dict.items()}
+        eval_dict = {f"sst2_test:{k}": v for k, v in eval_dict.items()}
         new_quality = eval_dict["sst2_test:accuracy"]
         wandb.log(eval_dict)
         return new_quality
