@@ -7,7 +7,7 @@ import json
 import datasets
 import wandb
 import torch
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 import os
 
 
@@ -117,10 +117,10 @@ class SubsetSearcherArguments(BaseModel):
     wandb_project: str = "subset_search"
     wandb_entity: str = "johnny-gary"
     seed: int = 0
-    annealing_runs: int = 5000
+    warmup_runs: int = 100
+    annealing_runs: int = 2000
     data_pool_size: int = 1000
     optimal_subset_size: int = 100
-    anneal_factor: float = 0.1
 
 
 class SubsetSearcher:
@@ -131,10 +131,11 @@ class SubsetSearcher:
         params: SubsetSearcherArguments
     ):
         self.params = params
-        self.seed, self.db_path, self.data_pool_size, self.annealing_runs, self.optimal_subset_size, self.wandb_project, self.wandb_entity = (
+        self.seed, self.db_path, self.data_pool_size, self.warmup_runs, self.annealing_runs, self.optimal_subset_size, self.wandb_project, self.wandb_entity = (
             params.seed,
             params.db_path,
             params.data_pool_size,
+            params.warmup_runs,
             params.annealing_runs,
             params.optimal_subset_size,
             params.wandb_project,
@@ -195,14 +196,9 @@ class SubsetSearcher:
             con.close()
 
     def select_new_subset(self, current_num_runs: int) -> np.ndarray:
-        # 0 <= exploration ratio <= 1; the closer to 0, the greedier
-        exploration_ratio = max(0, (self.annealing_runs - current_num_runs) / self.annealing_runs)
-        # 0 <= nth best <= int(exploration_ratio * current_num_runs); the closer to 0, the greedier
-        nth_best = np.random.randint(0, max(1, int(exploration_ratio * current_num_runs)))
-        base_subset = self._get_nth_best_subset(nth_best) 
-        self._create_new_subset_in_place(base_subset)
-        return base_subset # the altered base_subset
-    
+        # should be extended by different classes
+        pass
+
     def _get_num_runs(self):
         try:
             con = sqlite3.connect(self.db_path)
@@ -236,5 +232,47 @@ class SubsetSearcher:
     def search_til_manual_termination(self):
         while True:
             self.one_run()
+
+
+class GreedySearcher(SubsetSearcher):
+    def select_new_subset(self, current_num_runs: int) -> np.ndarray:
+        base_subset = self._get_nth_best_subset(0) 
+        self._create_new_subset_in_place(base_subset)
+        return base_subset # the altered base_subset
+ 
+
+class AnnealingSearcher(SubsetSearcher):
+    def select_new_subset(self, current_num_runs: int) -> np.ndarray:
+        # 0 <= exploration ratio <= 1; the closer to 0, the greedier
+        exploration_ratio = max(0, (self.annealing_runs - current_num_runs) / self.annealing_runs)
+        # 0 <= nth best <= int(exploration_ratio * current_num_runs); the closer to 0, the greedier
+        nth_best = np.random.randint(0, max(1, int(exploration_ratio * current_num_runs)))
+        base_subset = self._get_nth_best_subset(nth_best) 
+        self._create_new_subset_in_place(base_subset)
+        return base_subset # the altered base_subset
+ 
+
+class WarmupAnnealingSearcher(SubsetSearcher):
+    def select_new_subset(self, current_num_runs: int) -> np.ndarray:
+        if current_num_runs < self.warmup_runs:
+            # create new subset
+            base_subset = np.random.choice(self.data_pool_size, size=self.optimal_subset_size, replace=False)
+        elif i < self.annealing_runs + self.warmup_runs:
+            # 0 <= exploration ratio <= 1; the closer to 0, the greedier
+            exploration_ratio = max(0, (self.annealing_runs - current_num_runs) / self.annealing_runs)
+            # 0 <= nth best <= int(exploration_ratio * current_num_runs); the closer to 0, the greedier
+            nth_best = np.random.randint(0, max(1, int(exploration_ratio * current_num_runs)))
+            base_subset = self._get_nth_best_subset(nth_best) 
+            
+            # swap one example
+            self._create_new_subset_in_place(base_subset)
+        else:
+            base_subset = self._get_nth_best_subset(0) 
+
+            # swap one example
+            self._create_new_subset_in_place(base_subset)
+
+        self._create_new_subset_in_place(base_subset)
+        return base_subset # the altered base_subset
 
 
