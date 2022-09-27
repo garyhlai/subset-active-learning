@@ -257,7 +257,7 @@ class WarmupAnnealingSearcher(SubsetSearcher):
         if current_num_runs < self.warmup_runs:
             # create new subset
             base_subset = np.random.choice(self.data_pool_size, size=self.optimal_subset_size, replace=False)
-        elif i < self.annealing_runs + self.warmup_runs:
+        elif current_num_runs < self.annealing_runs + self.warmup_runs:
             # 0 <= exploration ratio <= 1; the closer to 0, the greedier
             exploration_ratio = max(0, (self.annealing_runs - current_num_runs) / self.annealing_runs)
             # 0 <= nth best <= int(exploration_ratio * current_num_runs); the closer to 0, the greedier
