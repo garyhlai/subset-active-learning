@@ -25,9 +25,12 @@ class SubsetTrainingArguments(BaseModel):
     max_grad_norm: float = 1.0
     warmup_ratio: float = 0.1
     weight_decay: float = 0.01
-    num_labels: int = 2
     metric: str = "accuracy"
-    
+    # dataset arguments
+    eval_mapping: list = []
+    num_labels: int = 2
+
+   
     
 class SubsetTrainer(): 
     def __init__(self, params: SubsetTrainingArguments, valid_ds, test_ds) -> None: 
@@ -41,7 +44,7 @@ class SubsetTrainer():
         model = AutoModelForSequenceClassification.from_pretrained(self.params.model_card, num_labels=self.params.num_labels)
         model.to(self.device)
         self._train(model, subset)
-        eval_dict = self._evaluate(model, self.test_dataloader)
+        eval_dict = self._evaluate(model, self.test_dataloader, self.params.eval_mapping)
         eval_dict = {"sst2_test:%s" % k: v for k, v in eval_dict.items()}
         new_quality = eval_dict["sst2_test:accuracy"]
         wandb.log(eval_dict)
@@ -86,7 +89,7 @@ class SubsetTrainer():
 
             if steps % self.params.eval_steps == 0:
                 model.eval()
-                eval_dict = self._evaluate(model, self.val_dataloader)
+                eval_dict = self._evaluate(model, self.val_dataloader, eval_mapping={})
                 wandb.log({'sst:val_acc' : eval_dict['accuracy']})
                 # early stopping
                 if not best_acc or eval_dict['accuracy'] > best_acc:
@@ -96,7 +99,7 @@ class SubsetTrainer():
                 if patience >= tolerance:
                     break
 
-    def _evaluate(self, model, val_dataloader):
+    def _evaluate(self, model, val_dataloader, eval_mapping: list):
         model.eval()
         val_pbar = tqdm(total=len(val_dataloader))
         for batch in val_dataloader:
@@ -104,7 +107,11 @@ class SubsetTrainer():
             with torch.no_grad():
                 outputs = model(**batch)
             logits = outputs.logits
-            predictions = torch.argmax(logits, dim=-1)
+            predictions = torch.argmax(logits, dim=-1).cpu().tolist()
+
+            if len(eval_mapping) > 0:
+                predictions = list(map(lambda x: eval_mapping[x], predictions))
+
             self.metric.add_batch(predictions=predictions, references=batch["labels"])
             val_pbar.update(1)
         eval_dict = self.metric.compute()
@@ -122,7 +129,6 @@ class SubsetSearcherArguments(BaseModel):
     data_pool_size: int = 1000
     optimal_subset_size: int = 100
 
-
 class SubsetSearcher:
     def __init__(
         self,
@@ -131,7 +137,8 @@ class SubsetSearcher:
         params: SubsetSearcherArguments
     ):
         self.params = params
-        self.seed, self.db_path, self.data_pool_size, self.warmup_runs, self.annealing_runs, self.optimal_subset_size, self.wandb_project, self.wandb_entity = (
+        self.seed, self.db_path, self.data_pool_size, self.warmup_runs, self.annealing_runs, \
+                self.optimal_subset_size, self.wandb_project, self.wandb_entity = (
             params.seed,
             params.db_path,
             params.data_pool_size,
@@ -139,7 +146,7 @@ class SubsetSearcher:
             params.annealing_runs,
             params.optimal_subset_size,
             params.wandb_project,
-            params.wandb_entity
+            params.wandb_entity,
         )
         self.data_pool = data_pool
         self.subset_trainer = subset_trainer
