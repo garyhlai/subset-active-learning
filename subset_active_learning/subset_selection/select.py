@@ -270,16 +270,33 @@ class WarmupAnnealingSearcher(SubsetSearcher):
             # 0 <= nth best <= int(exploration_ratio * current_num_runs); the closer to 0, the greedier
             nth_best = np.random.randint(0, max(1, int(exploration_ratio * current_num_runs)))
             base_subset = self._get_nth_best_subset(nth_best) 
-            
-            # swap one example
-            self._create_new_subset_in_place(base_subset)
         else:
             base_subset = self._get_nth_best_subset(0) 
 
-            # swap one example
-            self._create_new_subset_in_place(base_subset)
-
+        # swap one example
         self._create_new_subset_in_place(base_subset)
         return base_subset # the altered base_subset
 
 
+class GeneticSearcher(SubsetSearcher):
+    def select_new_subset(self, current_num_runs: int) -> np.ndarray:
+        if current_num_runs < self.warmup_runs:
+            # create new subset
+            base_subset = np.random.choice(self.data_pool_size, size=self.optimal_subset_size, replace=False)
+        else:
+            # 0 <= exploration ratio <= 1; the closer to 0, the greedier
+            mother = np.random.randint(0, max(1, self.annealing_runs))
+            father = np.random.randint(0, max(1, self.annealing_runs))
+
+            m_subset = self._get_nth_best_subset(mother) 
+            f_subset = self._get_nth_best_subset(father) 
+
+            m_half = np.random.choice(m_subset, size=self.optimal_subset_size/2)
+            f_half = np.random.choice(f_subset, size=self.optimal_subset_size/2)
+
+            # sex
+            base_subset = np.concatenate([m_half, f_half])
+
+        # mutation
+        self._create_new_subset_in_place(base_subset)
+        return base_subset # the altered base_subset
