@@ -23,7 +23,7 @@ def preprocess_sst2(model_card: str) -> datasets.DatasetDict:
     tokenized_sst2 = sst2.map(tokenize_function, batched=False)
     tokenized_sst2 = tokenized_sst2.rename_column("label", "scalar_label")
     tokenized_sst2 = tokenized_sst2.map(lambda x: {"labels": 0 if x["scalar_label"] < 0.5 else 1})
-    tokenized_sst2.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
+    tokenized_sst2.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
     return tokenized_sst2
 
 def preprocess_mnli(model_card: str) -> datasets.DatasetDict:
@@ -37,7 +37,7 @@ def preprocess_mnli(model_card: str) -> datasets.DatasetDict:
 
     tokenized_sst2 = sst2.map(tokenize_function, batched=False)
     tokenized_sst2 = tokenized_sst2.rename_column("label", "labels")
-    tokenized_sst2.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
+    tokenized_sst2.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
     return tokenized_sst2
 
 def preprocess_hans(model_card: str) -> datasets.DatasetDict:
@@ -51,7 +51,7 @@ def preprocess_hans(model_card: str) -> datasets.DatasetDict:
 
     tokenized_sst2 = sst2.map(tokenize_function, batched=False)
     tokenized_sst2 = tokenized_sst2.rename_column("label", "labels")
-    tokenized_sst2.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
+    tokenized_sst2.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
     return tokenized_sst2
 
 def preprocess_qqp(model_card: str) -> datasets.DatasetDict:
@@ -65,5 +65,5 @@ def preprocess_qqp(model_card: str) -> datasets.DatasetDict:
 
     tokenized_sst2 = sst2.map(tokenize_function, batched=False)
     tokenized_sst2 = tokenized_sst2.rename_column("label", "labels")
-    tokenized_sst2.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
+    tokenized_sst2.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
     return tokenized_sst2
