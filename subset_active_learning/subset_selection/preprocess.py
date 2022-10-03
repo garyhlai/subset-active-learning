@@ -8,6 +8,8 @@ def get_dataset(ds_name: str, model_card: str) -> datasets.DatasetDict:
         ds = preprocess_mnli(model_card)
     elif ds_name == 'qqp':
         ds = preprocess_qqp(model_card)
+    elif ds_name == 'hans':
+        ds = preprocess_hans(model_card)
     return ds
 
 def preprocess_sst2(model_card: str) -> datasets.DatasetDict:
@@ -26,6 +28,20 @@ def preprocess_sst2(model_card: str) -> datasets.DatasetDict:
 
 def preprocess_mnli(model_card: str) -> datasets.DatasetDict:
     sst2 = datasets.load_dataset('glue', 'mnli')
+    max_length = 63
+    tokenizer = AutoTokenizer.from_pretrained(model_card)
+
+    def tokenize_function(examples, field='sentence'):
+        full_str = '%s %s %s' % (examples['premise'], tokenizer.sep_token, examples['hypothesis'])
+        return tokenizer(full_str, padding='max_length', max_length=int(max_length)*2+3, truncation=True)
+
+    tokenized_sst2 = sst2.map(tokenize_function, batched=False)
+    tokenized_sst2 = tokenized_sst2.rename_column("label", "labels")
+    tokenized_sst2.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
+    return tokenized_sst2
+
+def preprocess_hans(model_card: str) -> datasets.DatasetDict:
+    sst2 = datasets.load_dataset('hans')
     max_length = 63
     tokenizer = AutoTokenizer.from_pretrained(model_card)
 
