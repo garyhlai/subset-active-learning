@@ -9,23 +9,27 @@
 
 source activate torch
 
-papermill -p db_path ../results/mnli.db \
+papermill -p db_path ../../results/mnli_hans.db \
     -p ds_name mnli \
+    -p test_dataset hans \
+    -p eval_mapping \[0,1,1\] \
     -p num_labels 3 \
     -p valid_split validation_mismatched \
-    -p test_split validation_mismatched \
-    -p wandb_project mnli_search \
+    -p test_split train \
+    -p wandb_project mnli_hans_search \
     -p wandb_entity johntzwei \
     -p pool_size 2000 \
     -p search_size 200 \
     ./search_subset.ipynb /dev/null &
 
-papermill -p db_path ../results/mnli.db \
+papermill -p db_path ../../results/mnli_hans.db \
     -p ds_name mnli \
+    -p test_dataset hans \
+    -p eval_mapping \[0,1,1\] \
     -p num_labels 3 \
     -p valid_split validation_mismatched \
-    -p test_split validation_mismatched \
-    -p wandb_project mnli_search \
+    -p test_split train \
+    -p wandb_project mnli_hans_search \
     -p wandb_entity johntzwei \
     -p pool_size 2000 \
     -p search_size 200 \
