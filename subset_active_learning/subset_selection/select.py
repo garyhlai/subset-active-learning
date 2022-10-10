@@ -38,7 +38,7 @@ class SubsetTrainer():
         self.val_dataloader = torch.utils.data.DataLoader(valid_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True, num_workers=self.num_workers)
         self.test_dataloader = torch.utils.data.DataLoader(test_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True, num_workers=self.num_workers)
 
-    def train_one_step(self, subset: datasets.Dataset, calculate_test_accuracy: bool = False, save_path=None)-> float:
+    def train(self, subset: datasets.Dataset, calculate_test_accuracy: bool = False, save_path=None)-> float:
         model = AutoModelForSequenceClassification.from_pretrained(self.params.model_card, num_labels=self.params.num_labels)
         model.to(self.device)
         self._train(model, subset)
@@ -56,6 +56,7 @@ class SubsetTrainer():
         if save_path is not None: 
             torch.save(model.state_dict(), save_path)
         return new_quality
+
 
     def _train(self, model, train_dataset, tolerance=2):
         steps = 0
@@ -229,7 +230,7 @@ class SubsetSearcher:
         wandb.log({"optimal_subset_size": self.optimal_subset_size})
         wandb.log({"indices": json.dumps(new_subset_indices.tolist())})
         new_subset=self.data_pool.select(new_subset_indices)
-        new_quality = self.subset_trainer.train_one_step(new_subset)
+        new_quality = self.subset_trainer.train(new_subset)
         self._insert_run(subset_indices=new_subset_indices, quality=new_quality)
         wandb_run.finish()
 

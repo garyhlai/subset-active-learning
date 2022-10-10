@@ -6,7 +6,7 @@ import wandb
 import numpy as np
 import datasets
 
-from transformers import AutoModelForSequenceClassification, get_scheduler
+from transformers import AutoModelForSequenceClassification, get_scheduler, set_seed
 from tqdm import tqdm
 import torch
 
@@ -62,11 +62,11 @@ class CustomSubsetTrainer(select.SubsetTrainer):
                 it = iter(train_dataloader)
                 batch = next(it)
             steps += 1
-            outputs = model(**batch)
-            loss = outputs.loss
-            loss.backward()
-            # total_loss += loss.cpu()
+
+            loss = model(**batch).loss
+            total_loss += float(loss)
             wandb.log({"loss": loss})
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(
                 model.parameters(), self.params.max_grad_norm
             )
@@ -113,9 +113,11 @@ class ComparisonRun:
         valid_ds: datasets.Dataset,
         test_ds: datasets.Dataset,
         seed: int,
+        save_path: str = None
     ):
         self.train_ds, self.valid_ds, self.test_ds = train_ds, valid_ds, test_ds
         self.seed = seed
+        self.save_path = save_path
 
     def one_run(
         self,
@@ -123,12 +125,15 @@ class ComparisonRun:
         config: select.SubsetTrainingArguments,
         num_workers: int = 0,
         use_custom_subset_trainer: bool = False,
+        set_fixed_model_seed = False
     ):
         wandb_tags.append(str(self.seed))
         wandb_run = wandb.init(
             project="subset-search-gpu-opt", entity="johnny-gary", tags=wandb_tags
         )
         wandb.log({"batch_size": config.batch_size})
+        set_seed(42)
+        print(f"##### Warning: Hard Setting Model Seed to 42")
         subset_trainer = (
             CustomSubsetTrainer(
                 params=config,
@@ -145,7 +150,7 @@ class ComparisonRun:
             )
         )
         start_time = time.time()
-        subset_trainer.train_one_step(
+        subset_trainer.train(
             subset=self.train_ds, calculate_test_accuracy=True
         )
         wandb.log({"run_time": round(time.time() - start_time, 2)})
