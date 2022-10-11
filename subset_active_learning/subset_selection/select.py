@@ -14,8 +14,8 @@ import os
 class SubsetTrainingArguments(BaseModel):
     model_card: str = "google/electra-small-discriminator"
     pretraining: bool = True
-    max_steps: int = 6000
-    eval_steps: int = 300
+    max_steps: int = 3000
+    eval_steps: int = 500
     learning_rate: float = 1e-5
     batch_size: int = 8
     # adam should default to correct_bias = True
