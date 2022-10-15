@@ -112,11 +112,13 @@ class ComparisonRun:
         train_ds: datasets.Dataset,
         valid_ds: datasets.Dataset,
         test_ds: datasets.Dataset,
-        seed: int,
+        data_seed: int,
+        model_seed: int, 
         save_path: str = None
     ):
         self.train_ds, self.valid_ds, self.test_ds = train_ds, valid_ds, test_ds
-        self.seed = seed
+        self.data_seed = data_seed
+        self.model_seed = model_seed
         self.save_path = save_path
 
     def one_run(
@@ -125,15 +127,14 @@ class ComparisonRun:
         config: select.SubsetTrainingArguments,
         num_workers: int = 0,
         use_custom_subset_trainer: bool = False,
-        set_fixed_model_seed = False
     ):
-        wandb_tags.append(str(self.seed))
+        wandb_tags.append(str(self.data_seed))
         wandb_run = wandb.init(
             project="subset-search-gpu-opt", entity="johnny-gary", tags=wandb_tags
         )
         wandb.log({"batch_size": config.batch_size})
-        set_seed(42)
-        print(f"##### Warning: Hard Setting Model Seed to 42")
+        set_seed(self.model_seed)
+        print(f"##### Warning: Hard Setting Model Seed to {self.model_seed}")
         subset_trainer = (
             CustomSubsetTrainer(
                 params=config,
