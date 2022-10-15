@@ -1,3 +1,7 @@
+"""
+May not keep maintaining this module. Might deprecate it soon.
+"""
+
 import time
 from typing import List
 
