@@ -27,6 +27,7 @@ class SubsetTrainingArguments(BaseModel):
     weight_decay: float = 0.01
     num_labels: int = 2
     metric: str = "accuracy"
+    early_stopping: bool = True
     
     
 class SubsetTrainer(): 
@@ -38,10 +39,11 @@ class SubsetTrainer():
         self.val_dataloader = torch.utils.data.DataLoader(valid_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True, num_workers=self.num_workers)
         self.test_dataloader = torch.utils.data.DataLoader(test_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True, num_workers=self.num_workers)
 
-    def train(self, subset: datasets.Dataset, calculate_test_accuracy: bool = False, save_path=None)-> float:
+    def train(self, subset: datasets.Dataset, early_stopping, calculate_test_accuracy: bool = False, save_path=None)-> float:
+        print(f"### Early stopping is: {early_stopping}")
         model = AutoModelForSequenceClassification.from_pretrained(self.params.model_card, num_labels=self.params.num_labels)
         model.to(self.device)
-        self._train(model, subset)
+        self._train(model=model, train_dataset=subset, early_stopping=early_stopping)
 
         if calculate_test_accuracy: # evaluate test accuracy
             test_eval_dict = self._evaluate(model, self.test_dataloader)
@@ -58,7 +60,7 @@ class SubsetTrainer():
         return new_quality
 
 
-    def _train(self, model, train_dataset, tolerance=2):
+    def _train(self, model, train_dataset, early_stopping, tolerance=2):
         steps = 0
         epochs = 0
         best_acc = None
@@ -100,12 +102,14 @@ class SubsetTrainer():
                 eval_dict = self._evaluate(model, self.val_dataloader)
                 wandb.log({'sst:val_acc' : eval_dict['accuracy']})
                 # early stopping
-                if not best_acc or eval_dict['accuracy'] > best_acc:
-                    best_acc = eval_dict['accuracy']
-                else:
-                    patience += 1
-                if patience >= tolerance:
-                    break
+                if early_stopping:
+                    print("### Warning: we are early stopping!")
+                    if not best_acc or eval_dict['accuracy'] > best_acc:
+                        best_acc = eval_dict['accuracy']
+                    else:
+                        patience += 1
+                    if patience >= tolerance:
+                        break
 
     def _evaluate(self, model, val_dataloader):
         model.eval()

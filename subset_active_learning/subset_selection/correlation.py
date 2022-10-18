@@ -86,6 +86,6 @@ class CorrelationRun:
             test_ds=test_ds,
         )
         start_time = time.time()
-        subset_trainer.train(subset=train_ds, calculate_test_accuracy=True)
+        subset_trainer.train(subset=train_ds, early_stopping=config.early_stopping, calculate_test_accuracy=True)
         wandb.log({"run_time": round(time.time() - start_time, 2)})
         wandb_run.finish()
