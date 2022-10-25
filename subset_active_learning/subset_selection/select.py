@@ -50,7 +50,7 @@ class SubsetTrainer():
         wandb.log(eval_dict)
         return new_quality
 
-    def _train(self, model, train_dataset, tolerance=2):
+    def _train(self, model, train_dataset, tolerance=1):
         steps = 0
         epochs = 0
         best_acc = None
@@ -126,6 +126,7 @@ class SubsetSearcherArguments(BaseModel):
     seed: int = 0
     warmup_runs: int = 100
     annealing_runs: int = 2000
+    offset_idx: int = 0
     data_pool_size: int = 1000
     optimal_subset_size: int = 100
 
@@ -138,7 +139,7 @@ class SubsetSearcher:
     ):
         self.params = params
         self.seed, self.db_path, self.data_pool_size, self.warmup_runs, self.annealing_runs, \
-                self.optimal_subset_size, self.wandb_project, self.wandb_entity = (
+                self.optimal_subset_size, self.wandb_project, self.wandb_entity, self.offset_idx = (
             params.seed,
             params.db_path,
             params.data_pool_size,
@@ -147,6 +148,7 @@ class SubsetSearcher:
             params.optimal_subset_size,
             params.wandb_project,
             params.wandb_entity,
+            params.offset_idx
         )
         self.data_pool = data_pool
         self.subset_trainer = subset_trainer
@@ -162,7 +164,8 @@ class SubsetSearcher:
                             ON states (objective);''')
             
             # start from a random sample
-            random_subset_indices = np.random.choice(self.data_pool_size, size=self.optimal_subset_size, replace=False)
+            indexes = np.arange(self.offset_idx, self.offset_idx + self.data_pool_size)
+            random_subset_indices = np.random.choice(indexes, size=self.optimal_subset_size, replace=False)
             if (num_unique_samples := len(set(random_subset_indices))) != self.optimal_subset_size:
                 raise ValueError(f"Unexpected number of indices are selected. Expected {self.optimal_subset_size}, got {num_unique_samples}")
             cur.execute("INSERT INTO states VALUES ('%s', 0)" % json.dumps(random_subset_indices.tolist()))
@@ -178,7 +181,7 @@ class SubsetSearcher:
             r = cur.fetchone()
         finally:
             con.close()
-        return np.array(json.loads(r[0]))
+        return np.array(json.loads(r[0])) - self.offset_idx
 
     def _create_new_subset_in_place(self, base_subset: np.ndarray) -> np.ndarray:
         """Create a new subset by swapping out one sample from the base_subset
@@ -197,7 +200,7 @@ class SubsetSearcher:
         try:
             con = sqlite3.connect(self.db_path)
             cur = con.cursor()
-            cur.execute("INSERT INTO states VALUES ('%s', %.8f)" % (json.dumps(subset_indices.tolist()), quality))
+            cur.execute("INSERT INTO states VALUES ('%s', %.8f)" % (json.dumps((subset_indices + self.offset_idx).tolist()), quality))
             con.commit()
         finally:
             con.close()
@@ -290,12 +293,11 @@ class GeneticSearcher(SubsetSearcher):
 
             m_subset = self._get_nth_best_subset(mother) 
             f_subset = self._get_nth_best_subset(father) 
-
-            m_half = np.random.choice(m_subset, size=self.optimal_subset_size/2)
-            f_half = np.random.choice(f_subset, size=self.optimal_subset_size/2)
-
+            
             # sex
-            base_subset = np.concatenate([m_half, f_half])
+            base_subset = np.concatenate([m_subset, f_subset])
+            base_subset = np.unique(base_subset)
+            base_subset = np.random.choice(base_subset, size=self.optimal_subset_size, replace=False)
 
         # mutation
         self._create_new_subset_in_place(base_subset)
