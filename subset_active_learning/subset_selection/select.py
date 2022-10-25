@@ -40,15 +40,16 @@ class SubsetTrainer():
         self.val_dataloader = torch.utils.data.DataLoader(valid_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True)
         self.test_dataloader = torch.utils.data.DataLoader(test_ds, shuffle=False, batch_size=self.params.batch_size, pin_memory=True)
 
-    def train_one_step(self, subset: datasets.Dataset) -> float:
+    def train_one_step(self, subset: datasets.Dataset) -> (float, np.ndarray):
         model = AutoModelForSequenceClassification.from_pretrained(self.params.model_card, num_labels=self.params.num_labels)
         model.to(self.device)
         self._train(model, subset)
         eval_dict = self._evaluate(model, self.test_dataloader, self.params.eval_mapping)
         eval_dict = {"sst2_test:%s" % k: v for k, v in eval_dict.items()}
         new_quality = eval_dict["sst2_test:accuracy"]
+        predictions = eval_dict["sst2_test:predictions"]
         wandb.log(eval_dict)
-        return new_quality
+        return new_quality, predictions
 
     def _train(self, model, train_dataset, tolerance=1):
         steps = 0
@@ -102,12 +103,17 @@ class SubsetTrainer():
     def _evaluate(self, model, val_dataloader, eval_mapping: list):
         model.eval()
         val_pbar = tqdm(total=len(val_dataloader))
+
+        scores = []
         for batch in val_dataloader:
             batch = {k: v.to(self.device) for k, v in batch.items()}
             with torch.no_grad():
                 outputs = model(**batch)
             logits = outputs.logits
             predictions = torch.argmax(logits, dim=-1).cpu().tolist()
+
+            batch_scores = torch.nn.Softmax()(logits)[:,-1]
+            scores.append(batch_scores)
 
             if len(eval_mapping) > 0:
                 predictions = list(map(lambda x: eval_mapping[x], predictions))
@@ -116,6 +122,9 @@ class SubsetTrainer():
             val_pbar.update(1)
         eval_dict = self.metric.compute()
         val_pbar.set_description('Acc: %.2f' % eval_dict['accuracy'])
+
+        eval_dict['predictions'] = torch.cat(scores)
+
         return eval_dict
 
 
@@ -159,7 +168,7 @@ class SubsetSearcher:
         with sqlite3.connect(db_path) as con:
             cur = con.cursor()
             cur.execute('''CREATE TABLE states
-                        (indexes text, objective real)''')
+                        (indexes text, predictions text, objective real)''')
             cur.execute('''CREATE INDEX idx_objective 
                             ON states (objective);''')
             
@@ -168,7 +177,7 @@ class SubsetSearcher:
             random_subset_indices = np.random.choice(indexes, size=self.optimal_subset_size, replace=False)
             if (num_unique_samples := len(set(random_subset_indices))) != self.optimal_subset_size:
                 raise ValueError(f"Unexpected number of indices are selected. Expected {self.optimal_subset_size}, got {num_unique_samples}")
-            cur.execute("INSERT INTO states VALUES ('%s', 0)" % json.dumps(random_subset_indices.tolist()))
+            cur.execute("INSERT INTO states VALUES ('%s', '[]', 0)" % json.dumps(random_subset_indices.tolist()))
             con.commit()
             
 
@@ -196,11 +205,12 @@ class SubsetSearcher:
             raise ValueError(f"Expected {self.optimal_subset_size} unique samples for the subset; got {num_unique_samples}")
         return base_subset
 
-    def _insert_run(self, subset_indices: np.ndarray, quality: float) -> None:
+    def _insert_run(self, subset_indices: np.ndarray, predictions: np.ndarray, quality: float) -> None:
         try:
             con = sqlite3.connect(self.db_path)
             cur = con.cursor()
-            cur.execute("INSERT INTO states VALUES ('%s', %.8f)" % (json.dumps((subset_indices + self.offset_idx).tolist()), quality))
+            cur.execute("INSERT INTO states VALUES ('%s', '%s', %.8f)" % \
+                    (json.dumps((subset_indices + self.offset_idx).tolist()), json.dumps(predictions.tolist()), quality))
             con.commit()
         finally:
             con.close()
@@ -224,14 +234,16 @@ class SubsetSearcher:
         seed_everything(self.seed)
         current_num_run = self._get_num_runs()
         new_subset_indices = self.select_new_subset(current_num_run)
+
         wandb_run = wandb.init(project=self.wandb_project, entity=self.wandb_entity, tags=[self.subset_trainer.params.model_card])
         wandb.log({"model_card": self.subset_trainer.params.model_card})
         wandb.log({"pool_size": self.data_pool_size})
         wandb.log({"search_size": self.optimal_subset_size})
         wandb.log({"indices": json.dumps(new_subset_indices.tolist())})
-        new_subset=self.data_pool.select(new_subset_indices)
-        new_quality = self.subset_trainer.train_one_step(new_subset)
-        self._insert_run(subset_indices=new_subset_indices, quality=new_quality)
+
+        new_subset = self.data_pool.select(new_subset_indices)
+        new_quality, predictions = self.subset_trainer.train_one_step(new_subset)
+        self._insert_run(subset_indices=new_subset_indices, predictions=predictions, quality=new_quality)
         wandb_run.finish()
 
     def search(self, n_runs):
